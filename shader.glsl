@@ -95,11 +95,11 @@ float cos_between(vec3 a, vec3 b) {
 
 // Scene
 const int lightCount  = 1;
-PointLight lights [lightCount];
+PointLight lights[lightCount];
 const int sphereCount = 2;
-Sphere     spheres[sphereCount];
+Sphere    spheres[sphereCount];
 const int planeCount  = 5;
-Plane       planes[planeCount];
+Plane      planes[planeCount];
 
 // Scene initialization goes here
 void scene() {
@@ -186,7 +186,8 @@ vec4 trace(in Ray r) {
 			hitType = HIT_PLANE;
         }
     }
-        
+    
+	// Check distance match	
     if (closest.dist >= 0.0) {
         for (int lightId = 0; lightId < lightCount; ++lightId) {
 			if (hitType == HIT_SPHERE) {
