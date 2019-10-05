@@ -218,7 +218,7 @@ vec4 trace(in Ray r, int depth) {
 #ifdef USE_SHADOWS
 			Ray shadowRay;
 			shadowRay.direction = normalize(lights[lightId].location - closestHit.location);
-			shadowRay.origin    = closestHit.location + shadowRay.direction;
+			shadowRay.origin    = closestHit.location + shadowRay.direction * 10e-4;
 			
 			int closestShadowId;
 			// Closest hit manifold
