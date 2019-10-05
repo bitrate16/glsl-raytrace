@@ -5,6 +5,8 @@
 #define GI_COLOR  vec4(1.0, 1.0, 1.0, 1.0)
 #define MAX_RAY_DEPTH 4
 #define USE_SHADOWS
+// GLSL DOES NOT SUPPURT RECURSION
+// #define USE_REFLECTIONS
 
 struct Ray {
     vec3 origin;
@@ -27,6 +29,7 @@ struct Material {
     vec4 color;
     float lumine;
     float diffuse;
+	float reflect;
 };
 
 struct PointLight {
@@ -116,12 +119,14 @@ void scene() {
 	spheres[0].material.color   = vec4(1.0, 0.0, 0.0, 1.0);
 	spheres[0].material.diffuse = 1.0;
 	spheres[0].material.lumine  = 0.0;
+	spheres[0].material.reflect = 0.0;
     
 	spheres[1].center = vec3(0.5 * sin(iTime + 0.3), 0.5 * cos(iTime + 0.3), 1.5);
     spheres[1].radius = 0.05;
 	spheres[1].material.color   = vec4(0.0, 1.0, 0.0, 1.0);
 	spheres[1].material.diffuse = 1.0;
 	spheres[1].material.lumine  = 0.0;
+	spheres[1].material.reflect = 0.0;
 	
 	// Plane
 	planes[0].location = vec3(0.0, -1.0, 0.0);
@@ -129,30 +134,35 @@ void scene() {
 	planes[0].material.color   = vec4(1.0, 1.0, 1.0, 1.0);
 	planes[0].material.diffuse = 1.0;
 	planes[0].material.lumine  = 0.0;
+	planes[1].material.reflect = 0.0;
 	
 	planes[1].location = vec3(0.0, 1.0, 0.0);
     planes[1].normal   = vec3(0.0, -1.0, 0.0);
 	planes[1].material.color   = vec4(1.0, 1.0, 1.0, 1.0);
 	planes[1].material.diffuse = 1.0;
 	planes[1].material.lumine  = 0.0;
+	planes[1].material.reflect = 0.0;
 	
 	planes[2].location = vec3(0.0, 0.0, 4.0);
     planes[2].normal   = vec3(0.0, 0.0, -1.0);
 	planes[2].material.color   = vec4(1.0, 1.0, 1.0, 1.0);
 	planes[2].material.diffuse = 1.0;
 	planes[2].material.lumine  = 0.0;
+	planes[2].material.reflect = 0.0;
 	
 	planes[3].location = vec3(-1.0, 0.0, 0.0);
     planes[3].normal   = vec3(1.0, 0.0, 0.0);
 	planes[3].material.color   = vec4(1.0, 0.0, 0.0, 1.0);
 	planes[3].material.diffuse = 0.8;
 	planes[3].material.lumine  = 0.0;
+	planes[3].material.reflect = 0.0;
 	
 	planes[4].location = vec3(1.0, 0.0, 0.0);
     planes[4].normal   = vec3(-1.0, 0.0, 0.0);
 	planes[4].material.color   = vec4(0.0, 0.0, 1.0, 1.0);
 	planes[4].material.diffuse = 0.7;
 	planes[4].material.lumine  = 0.0;
+	planes[4].material.reflect = 0.0;
 }
 
 void traceClosest(in Ray r, out int hitType, out Hit closest, out int closestId) {
@@ -207,47 +217,66 @@ vec4 trace(in Ray r, int depth) {
     
 	// Check distance match	
     if (closestHit.dist >= 0.0) {
-		// Lighting from global illumination
+		Material closestMaterial;
+		
 		if (hitType == HIT_SPHERE)
-			color += GI_LUMINE * GI_COLOR * spheres[closestId].material.color;
+			closestMaterial = spheres[closestId].material;
 		else if (hitType == HIT_PLANE)
-			color += GI_LUMINE * GI_COLOR * planes[closestId].material.color;
+			closestMaterial = planes[closestId].material;
+		
+		// Lighting from global illumination
+		color += GI_LUMINE * GI_COLOR * closestMaterial.color * closestMaterial.diffuse;
 		
 		// Lighting from light objects
-        for (int lightId = 0; lightId < lightCount; ++lightId) {
+		if (closestMaterial.diffuse > 0.0) {
+			for (int lightId = 0; lightId < lightCount; ++lightId) {
 #ifdef USE_SHADOWS
-			Ray shadowRay;
-			shadowRay.direction = normalize(lights[lightId].location - closestHit.location);
-			shadowRay.origin    = closestHit.location + shadowRay.direction * 10e-4;
-			
-			int closestShadowId;
-			// Closest hit manifold
-			Hit closestShadowHit;
-			// Type of resulting hit
-			int shadowHitType;
-			
-			traceClosest(shadowRay, shadowHitType, closestShadowHit, closestShadowId);
-			
-			if (closestShadowId != -1 && closestShadowHit.dist < distance(closestHit.location, lights[lightId].location))
-				continue;
+				Ray shadowRay;
+				shadowRay.direction = normalize(lights[lightId].location - closestHit.location);
+				shadowRay.origin    = closestHit.location + shadowRay.direction * 10e-4;
+				
+				int closestShadowId;
+				// Closest hit manifold
+				Hit closestShadowHit;
+				// Type of resulting hit
+				int shadowHitType;
+				
+				traceClosest(shadowRay, shadowHitType, closestShadowHit, closestShadowId);
+				
+				if (closestShadowId != -1 && closestShadowHit.dist < distance(closestHit.location, lights[lightId].location))
+					continue;
 #endif
-			if (hitType == HIT_SPHERE) {
-				color += spheres[closestId].material.color 
-                         * spheres[closestId].material.color 
-                         * lights[lightId].material.color 
-                         * lights[lightId].material.lumine
-                         * (max(cos_between(lights[lightId].location - closestHit.location, closestHit.normal), 0.0)
-                                 + max(cos_between(r.direction, closestHit.normal), 0.0)); // Spot
-			} else if (hitType == HIT_PLANE) {
-				color += planes[closestId].material.color 
-                         * planes[closestId].material.color 
-                         * lights[lightId].material.color 
-                         * lights[lightId].material.lumine
-                         * (max(cos_between(lights[lightId].location - closestHit.location, closestHit.normal), 0.0)
-                            + max(cos_between(r.direction, closestHit.normal), 0.0)); // Spot
-			}
-        } 
-    }
+				// Calculate normal lighting
+				if (hitType == HIT_SPHERE) {
+					color += closestMaterial.color 
+							 * closestMaterial.diffuse
+							 * lights[lightId].material.color 
+							 * lights[lightId].material.lumine
+							 * (max(cos_between(lights[lightId].location - closestHit.location, closestHit.normal), 0.0)
+									 + max(cos_between(r.direction, closestHit.normal), 0.0)); // Spot
+				} else if (hitType == HIT_PLANE) {
+					color += closestMaterial.color 
+							 * closestMaterial.diffuse
+							 * lights[lightId].material.color 
+							 * lights[lightId].material.lumine
+							 * (max(cos_between(lights[lightId].location - closestHit.location, closestHit.normal), 0.0)
+								+ max(cos_between(r.direction, closestHit.normal), 0.0)); // Spot
+				}
+			} 
+		}
+		
+#ifdef USE_REFLECTIONS
+		// Reflection value
+		if (closestMaterial.reflect > 0.0) {
+			Ray reflectionRay;
+			reflectionRay.direction = normalize(r.direction - 2.0 * dot(r.direction, closestHit.normal) * closestHit.normal);
+			reflectionRay.origin    = closestHit.location + reflectionRay.direction * 10e-4;
+			
+			vec4 reflectValue = trace(reflectionRay, depth + 1);
+			color += reflectValue * closestMaterial.color * closestMaterial.reflect;
+		}
+#endif
+	}
 	
 	return color;
 }
