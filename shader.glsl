@@ -3,6 +3,8 @@
 #define RAY_DIRECTION_LENGTH 0.8
 #define GI_LUMINE 0.1
 #define GI_COLOR  vec4(1.0, 1.0, 1.0, 1.0)
+#define MAX_RAY_DEPTH 4
+#define USE_SHADOWS
 
 struct Ray {
     vec3 origin;
@@ -153,19 +155,15 @@ void scene() {
 	planes[4].material.lumine  = 0.0;
 }
 
-// Ray trace function
-vec4 trace(in Ray r) {
-	// Output color
-	vec4 color = vec4(0.0);
-	
-	// H I T
-	
-    int closestId = -1;
+void traceClosest(in Ray r, out int hitType, out Hit closest, out int closestId) {
+	// Closest hit ID
+	closestId = -1;
 	// Closest hit manifold
-    Hit closest;
-    closest.dist = -1.0;
+    closest.dist     = -1.0;
+    closest.location = vec3(0.0);
+    closest.normal   = vec3(0.0);
 	// Type of resulting hit
-	int hitType = HIT_NONE;
+	hitType = HIT_NONE;
 	
 	// Trace spheres
     for (int sphereId = 0; sphereId < sphereCount; ++sphereId) {
@@ -186,26 +184,67 @@ vec4 trace(in Ray r) {
 			hitType = HIT_PLANE;
         }
     }
+}
+
+// Ray trace function
+vec4 trace(in Ray r, int depth) {
+	// Limit depth of the ray
+	if (depth >= MAX_RAY_DEPTH)
+		return vec4(0.0);
+	
+	// Output color
+	vec4 color = vec4(0.0);
+	
+	// H I T
+	
+    int closestId;
+	// Closest hit manifold
+    Hit closestHit;
+	// Type of resulting hit
+	int hitType;
+	
+	traceClosest(r, hitType, closestHit, closestId);
     
 	// Check distance match	
-    if (closest.dist >= 0.0) {
+    if (closestHit.dist >= 0.0) {
+		// Lighting from global illumination
+		if (hitType == HIT_SPHERE)
+			color += GI_LUMINE * GI_COLOR * spheres[closestId].material.color;
+		else if (hitType == HIT_PLANE)
+			color += GI_LUMINE * GI_COLOR * planes[closestId].material.color;
+		
+		// Lighting from light objects
         for (int lightId = 0; lightId < lightCount; ++lightId) {
+#ifdef USE_SHADOWS
+			Ray shadowRay;
+			shadowRay.direction = normalize(lights[lightId].location - closestHit.location);
+			shadowRay.origin    = closestHit.location + shadowRay.direction;
+			
+			int closestShadowId;
+			// Closest hit manifold
+			Hit closestShadowHit;
+			// Type of resulting hit
+			int shadowHitType;
+			
+			traceClosest(shadowRay, shadowHitType, closestShadowHit, closestShadowId);
+			
+			if (closestShadowId != -1 && closestShadowHit.dist < distance(closestHit.location, lights[lightId].location))
+				continue;
+#endif
 			if (hitType == HIT_SPHERE) {
-				color += GI_LUMINE * GI_COLOR * spheres[closestId].material.color // GI
-                             + spheres[closestId].material.color 
-                               * spheres[closestId].material.color 
-                               * lights[lightId].material.color 
-                               * lights[lightId].material.lumine
-                               * (max(cos_between(lights[lightId].location - closest.location, closest.normal), 0.0)
-                                  + max(cos_between(r.direction, closest.normal), 0.0)); // Spot
+				color += spheres[closestId].material.color 
+                         * spheres[closestId].material.color 
+                         * lights[lightId].material.color 
+                         * lights[lightId].material.lumine
+                         * (max(cos_between(lights[lightId].location - closestHit.location, closestHit.normal), 0.0)
+                                 + max(cos_between(r.direction, closestHit.normal), 0.0)); // Spot
 			} else if (hitType == HIT_PLANE) {
-				color += GI_LUMINE * GI_COLOR * planes[closestId].material.color // GI
-                         + planes[closestId].material.color 
-                           * planes[closestId].material.color 
-                           * lights[lightId].material.color 
-                           * lights[lightId].material.lumine
-                           * (max(cos_between(lights[lightId].location - closest.location, closest.normal), 0.0)
-                              + max(cos_between(r.direction, closest.normal), 0.0)); // Spot
+				color += planes[closestId].material.color 
+                         * planes[closestId].material.color 
+                         * lights[lightId].material.color 
+                         * lights[lightId].material.lumine
+                         * (max(cos_between(lights[lightId].location - closestHit.location, closestHit.normal), 0.0)
+                            + max(cos_between(r.direction, closestHit.normal), 0.0)); // Spot
 			}
         } 
     }
@@ -228,6 +267,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 	
 	// H I T
 	
-    fragColor = trace(r);
+    fragColor = trace(r, 0);
 }
 
